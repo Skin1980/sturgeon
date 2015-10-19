@@ -107,9 +107,14 @@ static int drv2605_set_waveform_sequence(struct drv2605_data *pDrv2605data, unsi
 	return drv2605_bulk_write(pDrv2605data, WAVEFORM_SEQUENCER_REG, (size>WAVEFORM_SEQUENCER_MAX)?WAVEFORM_SEQUENCER_MAX:size, seq);
 }
 
+
+static int voltage_control = 0x7e;
+module_param_named(current_voltage, voltage_control, int, 0644);
+
 static void drv2605_change_mode(struct drv2605_data *pDrv2605data, char work_mode, char dev_mode)
 {
-	/* please be noted : LRA open loop cannot be used with analog input mode */
+	drv2605_reg_write(pDrv2605data, RATED_VOLTAGE_REG, voltage_control);
+/* please be noted : LRA open loop cannot be used with analog input mode */
 	if(dev_mode == DEV_IDLE){
 		pDrv2605data->dev_mode = dev_mode;
 		pDrv2605data->work_mode = work_mode;
@@ -299,7 +304,6 @@ static int vibrator_get_time(struct timed_output_dev *dev)
 static void vibrator_enable( struct timed_output_dev *dev, int value)
 {
 	struct drv2605_data *pDrv2605data = container_of(dev, struct drv2605_data, to_dev);
-	
 	pDrv2605data->should_stop = YES;	
 	hrtimer_cancel(&pDrv2605data->timer);
 	cancel_work_sync(&pDrv2605data->vibrator_work);
@@ -337,7 +341,6 @@ static enum hrtimer_restart vibrator_timer_func(struct hrtimer *timer)
 static void vibrator_work_routine(struct work_struct *work)
 {
 	struct drv2605_data *pDrv2605data = container_of(work, struct drv2605_data, vibrator_work);
-
 	mutex_lock(&pDrv2605data->lock);
 	
 	if((pDrv2605data->work_mode == WORK_VIBRATOR)
@@ -696,6 +699,7 @@ fail0:
     return reval;
 }
 
+
 static void dev_init_platform_data(struct drv2605_data *pDrv2605data)
 {
 	struct drv2605_platform_data *pDrv2605Platdata = &pDrv2605data->PlatData;
@@ -708,7 +712,7 @@ static void dev_init_platform_data(struct drv2605_data *pDrv2605data)
 	//OTP memory saves data from 0x16 to 0x1a
 	if(pDrv2605data->OTP == 0) {
 		if(actuator.rated_vol != 0){
-			drv2605_reg_write(pDrv2605data, RATED_VOLTAGE_REG, actuator.rated_vol);
+			drv2605_reg_write(pDrv2605data, RATED_VOLTAGE_REG, voltage_control);
 		}else{
 			printk("%s, ERROR Rated ZERO\n", __FUNCTION__);
 		}
