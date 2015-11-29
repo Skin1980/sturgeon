@@ -313,6 +313,7 @@ struct qpnp_bms_chip {
     int             warm_reset_shutdown_soc_valid_limit;
     int             estimate_new_ocv_flag;
     const char      *battery_type;
+    unsigned long   last_recalc_time_by_jiffies;
 #endif
 };
 static struct of_device_id qpnp_bms_match_table[] = {
@@ -2687,6 +2688,9 @@ done_calculating:
 		report_state_of_charge(chip);
 	}
 	get_current_time(&chip->last_recalc_time);
+#ifdef CONFIG_HUAWEI_BATTERY_SETTING
+	chip->last_recalc_time_by_jiffies = (unsigned long)div_u64(get_jiffies_64(),HZ);
+#endif
 	chip->first_time_calc_soc = 0;
 	chip->first_time_calc_uuc = 0;
 	return chip->calculated_soc;
@@ -4699,7 +4703,7 @@ static int bms_suspend(struct device *dev)
 }
 static int bms_resume(struct device *dev)
 {
-	int rc;
+	int rc = 0;
 	int soc_calc_period;
 	int time_until_next_recalc = 0;
 	unsigned long time_since_last_recalc;
@@ -4708,13 +4712,21 @@ static int bms_resume(struct device *dev)
 	int cc_uah_in_sleep;
 	int sleep_duration;
 	uint16_t ocv_raw;
+#ifdef CONFIG_HUAWEI_BATTERY_SETTING
+	tm_now_sec = (unsigned long)div_u64(get_jiffies_64(),HZ);
+#else
 	rc = get_current_time(&tm_now_sec);
+#endif
 	if (rc) {
 		pr_err("Could not read current time: %d\n", rc);
 		tm_now_sec = 0;
 	} else {
 		soc_calc_period = get_calculation_delay_ms(chip);
+#ifdef CONFIG_HUAWEI_BATTERY_SETTING
+		time_since_last_recalc = tm_now_sec - chip->last_recalc_time_by_jiffies;
+#else
 		time_since_last_recalc = tm_now_sec - chip->last_recalc_time;
+#endif
 		pr_debug("Time since last recalc: %lu\n",
 				time_since_last_recalc);
 		time_until_next_recalc = max(0, soc_calc_period
