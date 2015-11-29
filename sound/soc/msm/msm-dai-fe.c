@@ -9,8 +9,6 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
-
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/device.h>
@@ -19,21 +17,17 @@
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/soc.h>
-
 static struct snd_soc_dai_ops msm_fe_dai_ops = {};
-
 /* Conventional and unconventional sample rate supported */
 static unsigned int supported_sample_rates[] = {
 	8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000,
 	88200, 96000, 176400, 192000
 };
-
 static struct snd_pcm_hw_constraint_list constraints_sample_rates = {
 	.count = ARRAY_SIZE(supported_sample_rates),
 	.list = supported_sample_rates,
 	.mask = 0,
 };
-
 static int multimedia_startup(struct snd_pcm_substream *substream,
 	struct snd_soc_dai *dai)
 {
@@ -42,7 +36,6 @@ static int multimedia_startup(struct snd_pcm_substream *substream,
 		&constraints_sample_rates);
 	return 0;
 }
-
 static int fe_dai_probe(struct snd_soc_dai *dai)
 {
 	struct snd_soc_dapm_route intercon;
@@ -73,15 +66,12 @@ static int fe_dai_probe(struct snd_soc_dai *dai)
 	}
 	return 0;
 }
-
 static struct snd_soc_dai_ops msm_fe_Multimedia_dai_ops = {
 	.startup	= multimedia_startup,
 };
-
 static const struct snd_soc_component_driver msm_fe_dai_component = {
 	.name		= "msm-dai-fe",
 };
-
 static struct snd_soc_dai_driver msm_fe_dais[] = {
 	{
 		.playback = {
@@ -695,11 +685,31 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 			.rate_min = 8000,
 			.rate_max = 48000,
 		},
+		.playback = {
+			.stream_name = "Tertiary MI2S_RX Hostless Playback",
+			.aif_name = "TERT_MI2S_DL_HL",
+			.rates = SNDRV_PCM_RATE_8000_48000,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE,
+			.channels_min = 1,
+			.channels_max = 2,
+			.rate_min = 8000,
+			.rate_max = 48000,
+		},
 		.ops = &msm_fe_dai_ops,
-		.name = "TERT_MI2S_TX_HOSTLESS",
+		.name = "TERT_MI2S_HOSTLESS",
 		.probe = fe_dai_probe,
 	},
 	{
+		.capture = {
+			.stream_name = "Secondary MI2S_TX Hostless Capture",
+			.aif_name = "SEC_MI2S_UL_HL",
+			.rates = SNDRV_PCM_RATE_8000_48000,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE,
+			.channels_min = 1,
+			.channels_max = 2,
+			.rate_min =	8000,
+			.rate_max =    48000,
+		},
 		.playback = {
 			.stream_name = "Secondary MI2S_RX Hostless Playback",
 			.aif_name = "SEC_MI2S_DL_HL",
@@ -711,7 +721,7 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 			.rate_max =    48000,
 		},
 		.ops = &msm_fe_dai_ops,
-		.name = "SEC_MI2S_RX_HOSTLESS",
+		.name = "SEC_MI2S_HOSTLESS",
 		.probe = fe_dai_probe,
 	},
 	{
@@ -725,8 +735,18 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 			.rate_min = 8000,
 			.rate_max = 48000,
 		},
+		.playback = {
+			.stream_name = "Quaternary MI2S_RX Hostless Playback",
+			.aif_name = "QUAT_MI2S_DL_HL",
+			.rates = SNDRV_PCM_RATE_8000_48000,
+			.formats = SNDRV_PCM_FMTBIT_S16_LE,
+			.channels_min = 1,
+			.channels_max = 2,
+			.rate_min = 8000,
+			.rate_max =    48000,
+		},
 		.ops = &msm_fe_dai_ops,
-		.name = "QUAT_MI2S_TX_HOSTLESS",
+		.name = "QUAT_MI2S_HOSTLESS",
 		.probe = fe_dai_probe,
 	},
 	{
@@ -1186,29 +1206,24 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 		.probe = fe_dai_probe,
 	},
 };
-
 static int msm_fe_dai_dev_probe(struct platform_device *pdev)
 {
 	if (pdev->dev.of_node)
 		dev_set_name(&pdev->dev, "%s", "msm-dai-fe");
-
 	dev_dbg(&pdev->dev, "%s: dev name %s\n", __func__,
 		dev_name(&pdev->dev));
 	return snd_soc_register_component(&pdev->dev, &msm_fe_dai_component,
 		msm_fe_dais, ARRAY_SIZE(msm_fe_dais));
 }
-
 static int msm_fe_dai_dev_remove(struct platform_device *pdev)
 {
 	snd_soc_unregister_component(&pdev->dev);
 	return 0;
 }
-
 static const struct of_device_id msm_dai_fe_dt_match[] = {
 	{.compatible = "qcom,msm-dai-fe"},
 	{}
 };
-
 static struct platform_driver msm_fe_dai_driver = {
 	.probe  = msm_fe_dai_dev_probe,
 	.remove = msm_fe_dai_dev_remove,
@@ -1218,19 +1233,16 @@ static struct platform_driver msm_fe_dai_driver = {
 		.of_match_table = msm_dai_fe_dt_match,
 	},
 };
-
 static int __init msm_fe_dai_init(void)
 {
 	return platform_driver_register(&msm_fe_dai_driver);
 }
 module_init(msm_fe_dai_init);
-
 static void __exit msm_fe_dai_exit(void)
 {
 	platform_driver_unregister(&msm_fe_dai_driver);
 }
 module_exit(msm_fe_dai_exit);
-
 /* Module information */
 MODULE_DESCRIPTION("MSM Frontend DAI driver");
 MODULE_LICENSE("GPL v2");

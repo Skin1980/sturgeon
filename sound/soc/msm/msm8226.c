@@ -44,6 +44,11 @@
 #define WCD9XXX_MBHC_DEF_BUTTONS 8
 #define WCD9XXX_MBHC_DEF_RLOADS 5
 #define TAPAN_EXT_CLK_RATE 9600000
+#define GPIO_SEC_MI2S_SCK    70
+#define GPIO_SEC_MI2S_WS     69
+#define GPIO_SEC_MI2S_DATA0  71
+#define GPIO_SEC_MI2S_DATA1  68
+#define GPIO_SEC_NUM 4
 #define GPIO_TERT_MI2S_SCK    49
 #define GPIO_TERT_MI2S_WS     50
 #define GPIO_TERT_MI2S_DATA0  51
@@ -58,6 +63,24 @@
 struct request_gpio {
 	unsigned gpio_no;
 	char *gpio_name;
+};
+static struct request_gpio sec_mi2s_gpio[] = {
+	{
+		.gpio_no = GPIO_SEC_MI2S_SCK,
+		.gpio_name = "SEC_MI2S_SCK",
+	},
+	{
+		.gpio_no = GPIO_SEC_MI2S_WS,
+		.gpio_name = "SEC_MI2S_WS",
+	},
+	{
+		.gpio_no = GPIO_SEC_MI2S_DATA0,
+		.gpio_name = "SEC_MI2S_DATA0",
+	},
+	{
+		.gpio_no = GPIO_SEC_MI2S_DATA1,
+		.gpio_name = "SEC_MI2S_DATA1",
+	},
 };
 static struct request_gpio tert_mi2s_gpio[] = {
 	{
@@ -98,6 +121,7 @@ struct mi2s_clk {
 	struct clk *bit_clk;
 	atomic_t mi2s_rsc_ref;
 };
+static struct mi2s_clk sec_mi2s_clk ;
 static struct mi2s_clk tert_mi2s_clk ;
 static struct mi2s_clk quat_mi2s_clk ;
 #define NUM_OF_AUXPCM_GPIOS 4
@@ -720,6 +744,30 @@ static int msm_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	rate->min = rate->max = 48000;
 	return 0;
 }
+static int msm_be_sec_mi2s_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
+			struct snd_pcm_hw_params *params)
+{
+	struct snd_interval *rate = hw_param_interval(params,
+				SNDRV_PCM_HW_PARAM_RATE);
+	rate->min = rate->max = 8000;
+	return 0;
+}
+static int msm_be_tert_mi2s_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
+			struct snd_pcm_hw_params *params)
+{
+	struct snd_interval *rate = hw_param_interval(params,
+				SNDRV_PCM_HW_PARAM_RATE);
+	rate->min = rate->max = 48000;
+	return 0;
+}
+static int msm_be_quat_mi2s_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
+			struct snd_pcm_hw_params *params)
+{
+	struct snd_interval *rate = hw_param_interval(params,
+				SNDRV_PCM_HW_PARAM_RATE);
+	rate->min = rate->max = 48000;
+	return 0;
+}
 static const struct soc_enum msm_snd_enum[] = {
 	SOC_ENUM_SINGLE_EXT(2, slim0_rx_ch_text),
 	SOC_ENUM_SINGLE_EXT(4, slim0_tx_ch_text),
@@ -824,6 +872,15 @@ static int msm8226_mi2s_free_gpios(struct request_gpio *mi2s_gpio,int size)
                 gpio_free(mi2s_gpio[i].gpio_no);
 	return 0;
 }
+static struct afe_clk_cfg lpass_sec_mi2s_enable = {
+        AFE_API_VERSION_I2S_CONFIG,
+        Q6AFE_LPASS_IBIT_CLK_256_KHZ,/* bit_clk */
+        Q6AFE_LPASS_OSR_CLK_12_P288_MHZ, /* osr_clk */
+        Q6AFE_LPASS_CLK_SRC_INTERNAL,
+        Q6AFE_LPASS_CLK_ROOT_DEFAULT,
+        Q6AFE_LPASS_MODE_BOTH_VALID,
+        0,
+};
 static struct afe_clk_cfg lpass_mi2s_enable = {
         AFE_API_VERSION_I2S_CONFIG,
         Q6AFE_LPASS_IBIT_CLK_1_P536_MHZ,/* bit_clk */
@@ -1008,11 +1065,21 @@ static int msm8226_mi2s_startup(struct snd_pcm_substream *substream,int id,struc
 			msm8226_tfa98xx_i2c_gpio_request();
 		}
 		msm8226_configure_mi2s_gpio(mi2s_gpio,size);	
-       		ret = afe_set_lpass_clock(id, &lpass_mi2s_enable);	
-       		if (ret < 0) {	
-      			pr_err("%s: afe_set_lpass_clock failed\n", __func__);	
-       		return ret;	
-      		}	
+		if (id == AFE_PORT_ID_TERTIARY_MI2S_RX || id == AFE_PORT_ID_TERTIARY_MI2S_TX || id == AFE_PORT_ID_QUATERNARY_MI2S_TX)
+		{
+			pr_info("%s: setting clock for port = 0x%x\n", __func__,id);
+			ret = afe_set_lpass_clock(id, &lpass_mi2s_enable);
+			if (ret < 0) {
+				pr_err("%s: afe_set_lpass_tert_quat_clock failed\n", __func__);
+				return ret;
+			}
+		}else{
+			ret = afe_set_lpass_clock(id, &lpass_sec_mi2s_enable);
+			if (ret < 0) {
+				pr_err("%s: afe_set_lpass_sec_clock failed\n", __func__);
+				return ret;
+			}
+		}
 		ret = snd_soc_dai_set_fmt(cpu_dai, SND_SOC_DAIFMT_CBS_CFS);
 		if (ret < 0)
 			dev_err(cpu_dai->dev, "set format for CPU dai"
@@ -1029,6 +1096,18 @@ static int msm8226_mi2s_startup(struct snd_pcm_substream *substream,int id,struc
 	}
 	return ret;
 }
+static int msm8226_sec_mi2s_startup(struct snd_pcm_substream *substream)
+{
+	return msm8226_mi2s_startup(substream,AFE_PORT_ID_SECONDARY_MI2S_RX,&sec_mi2s_clk,sec_mi2s_gpio,GPIO_SEC_NUM);
+}
+static void msm8226_sec_mi2s_shutdown(struct snd_pcm_substream *substream)
+{
+	msm8226_mi2s_shutdown(substream,AFE_PORT_ID_SECONDARY_MI2S_RX,&sec_mi2s_clk,sec_mi2s_gpio,GPIO_SEC_NUM);
+}
+static struct snd_soc_ops msm8226_sec_mi2s_be_ops = {
+	.startup = msm8226_sec_mi2s_startup,
+	.shutdown = msm8226_sec_mi2s_shutdown
+};
 static int msm8226_tert_mi2s_startup(struct snd_pcm_substream *substream)
 {
 	return msm8226_mi2s_startup(substream,AFE_PORT_ID_TERTIARY_MI2S_RX,&tert_mi2s_clk,tert_mi2s_gpio,GPIO_TERT_NUM);
@@ -1513,6 +1592,64 @@ static struct snd_soc_dai_link msm8226_common_dai[] = {
 		.codec_name = "snd-soc-dummy",
 		.be_id = MSM_FRONTEND_DAI_VOWLAN,
 	},
+	{
+		.name = "SEC_MI2S Hostless",
+		.stream_name = "SEC_MI2S Hostless",
+		.cpu_dai_name = "SEC_MI2S_HOSTLESS",
+		.platform_name = "msm-pcm-hostless",
+		.dynamic = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			    SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1, /* dai link has playback support */
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+	},
+	{
+		.name = "TERT_MI2S Hostless",
+		.stream_name = "TERT_MI2S Hostless",
+		.cpu_dai_name = "TERT_MI2S_HOSTLESS",
+		.platform_name = "msm-pcm-hostless",
+		.dynamic = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			    SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1, /* dai link has playback support */
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+	},
+	{
+		.name = "QUAT_MI2S Hostless",
+		.stream_name = "QUAT_MI2S Hostless",
+		.cpu_dai_name = "QUAT_MI2S_HOSTLESS",
+		.platform_name = "msm-pcm-hostless",
+		.dynamic = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			    SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1, /* dai link has playback support */
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+	},
+	{/* hw:x,31 */
+		.name = "MSM8226 Loopback2",
+		.stream_name = "MultiMedia10",
+		.cpu_dai_name = "MultiMedia10",
+		.platform_name  = "msm-pcm-loopback",
+		.dynamic = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+				SND_SOC_DPCM_TRIGGER_POST},
+		.ignore_suspend = 1,
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		/* this dai link has playback support */
+		.ignore_pmdown_time = 1,
+		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA10,
+	},
 	/* Backend BT/FM DAI Links */
 	{
 		.name = LPASS_BE_INT_BT_SCO_RX,
@@ -1690,6 +1827,32 @@ static struct snd_soc_dai_link msm8226_common_dai[] = {
 		.ignore_suspend = 1,
 	},
 	{
+		.name = LPASS_BE_SEC_MI2S_RX,
+		.stream_name = "Secondary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.1",
+		.platform_name = "msm-pcm-routing",
+		.codec_name     = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_SECONDARY_MI2S_RX,
+		.be_hw_params_fixup = msm_be_sec_mi2s_hw_params_fixup,
+		.ops = &msm8226_sec_mi2s_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
+		.name = LPASS_BE_SEC_MI2S_TX,
+		.stream_name = "Secondary MI2S Capture",
+		.cpu_dai_name = "msm-dai-q6-mi2s.1",
+		.platform_name = "msm-pcm-routing",
+		.codec_name     = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-tx",
+		.no_pcm = 1,
+		.be_id = MSM_BACKEND_DAI_SECONDARY_MI2S_TX,
+		.be_hw_params_fixup = msm_be_sec_mi2s_hw_params_fixup,
+		.ops = &msm8226_sec_mi2s_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
 		.name = LPASS_BE_TERT_MI2S_RX,
 		.stream_name = "Tertiary MI2S Playback",
 		.cpu_dai_name = "msm-dai-q6-mi2s.2",
@@ -1698,8 +1861,9 @@ static struct snd_soc_dai_link msm8226_common_dai[] = {
 		.codec_dai_name = "msm-stub-rx",
 		.no_pcm = 1,
 		.be_id = MSM_BACKEND_DAI_TERTIARY_MI2S_RX,
-		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.be_hw_params_fixup = msm_be_tert_mi2s_hw_params_fixup,
 		.ops = &msm8226_tert_mi2s_be_ops,
+		.ignore_suspend = 1,
 	},
 	{
 		.name = LPASS_BE_TERT_MI2S_TX,
@@ -1710,8 +1874,9 @@ static struct snd_soc_dai_link msm8226_common_dai[] = {
 		.codec_dai_name = "msm-stub-tx",
 		.no_pcm = 1,
 		.be_id = MSM_BACKEND_DAI_TERTIARY_MI2S_TX,
-		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.be_hw_params_fixup = msm_be_tert_mi2s_hw_params_fixup,
 		.ops = &msm8226_tert_mi2s_be_ops,
+		.ignore_suspend = 1,
 	},
 	{
 		.name = LPASS_BE_QUAT_MI2S_RX,
@@ -1722,8 +1887,9 @@ static struct snd_soc_dai_link msm8226_common_dai[] = {
 		.codec_dai_name = "msm-stub-rx",
 		.no_pcm = 1,
 		.be_id = MSM_BACKEND_DAI_QUATERNARY_MI2S_RX,
-		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.be_hw_params_fixup = msm_be_quat_mi2s_hw_params_fixup,
 		.ops = &msm8226_quat_mi2s_be_ops,
+		.ignore_suspend = 1,
 	},
 	{
 		.name = LPASS_BE_QUAT_MI2S_TX,
@@ -1734,8 +1900,9 @@ static struct snd_soc_dai_link msm8226_common_dai[] = {
 		.codec_dai_name = "msm-stub-tx",
 		.no_pcm = 1,
 		.be_id = MSM_BACKEND_DAI_QUATERNARY_MI2S_TX,
-		.be_hw_params_fixup = msm_be_hw_params_fixup,
+		.be_hw_params_fixup = msm_be_quat_mi2s_hw_params_fixup,
 		.ops = &msm8226_quat_mi2s_be_ops,
+		.ignore_suspend = 1,
 	},
 };
 static struct snd_soc_dai_link msm8226_9306_dai[] = {
@@ -2021,6 +2188,7 @@ static int msm8226_asoc_machine_probe(struct platform_device *pdev)
 			goto err_vdd_spkr;
 		}
 	}
+	atomic_set(&sec_mi2s_clk.mi2s_rsc_ref, 0);
 	atomic_set(&tert_mi2s_clk.mi2s_rsc_ref, 0);
 	atomic_set(&quat_mi2s_clk.mi2s_rsc_ref, 0);
     msm8226_setup_hs_jack(pdev, pdata);
